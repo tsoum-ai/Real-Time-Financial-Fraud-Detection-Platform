@@ -6,7 +6,7 @@ The two stateless rules run on the raw stream; the rapid-fire rule needs a
 windowed aggregation and is applied separately in the streaming job.
 """
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, List
 
 from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
@@ -28,7 +28,7 @@ def large_amount(threshold: float) -> Rule:
     )
 
 
-def high_risk_country(countries: list[str]) -> Rule:
+def high_risk_country(countries: List[str]) -> Rule:
     # empty list -> never fires, guard against isin([]) weirdness
     codes = [c.upper() for c in countries] or ["__none__"]
     return Rule(
@@ -38,11 +38,11 @@ def high_risk_country(countries: list[str]) -> Rule:
     )
 
 
-def stateless_rules(threshold: float, countries: list[str]) -> list[Rule]:
+def stateless_rules(threshold: float, countries: List[str]) -> List[Rule]:
     return [large_amount(threshold), high_risk_country(countries)]
 
 
-def apply_stateless(df: DataFrame, rules: list[Rule]) -> DataFrame:
+def apply_stateless(df: DataFrame, rules: List[Rule]) -> DataFrame:
     """Attach a `reasons` array and cumulative `score` for the per-record rules.
 
     Duplicate-card usage is folded in here too: if the same card_id shows up more
