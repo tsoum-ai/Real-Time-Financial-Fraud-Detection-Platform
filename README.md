@@ -11,6 +11,10 @@ Generator ─┐
 Generator ─┘
 ```
 
+## System Architecture
+
+![System Architecture](architecture.png)
+
 The standalone generator publishes directly to Kafka to create load; the API is
 there for real clients and for reading results back out.
 
