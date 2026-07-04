@@ -1,5 +1,5 @@
-# bitnami image ships a sane Spark 3.5 + Java setup, saves us fighting with JAVA_HOME
-FROM bitnami/spark:3.5.1
+# Official Apache Spark image with Java + Python pre-configured
+FROM apache/spark:3.5.1
 
 USER root
 
@@ -11,12 +11,12 @@ RUN pip install --no-cache-dir -r requirements-spark.txt
 COPY app ./app
 COPY spark ./spark
 
-# The Kafka + MongoDB connector jars are resolved via --packages at submit time
-# (see command in docker-compose). Ivy needs a writable home.
+# The Kafka + MongoDB connector jars are resolved via --packages at submit time.
+# Ivy needs a writable home.
 # PYTHONPATH so `from spark.fraud_rules import ...` resolves from the app root.
 ENV HOME=/tmp \
     PYTHONPATH=/opt/app
 
-CMD ["spark-submit", \
+CMD ["/opt/spark/bin/spark-submit", \
      "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0", \
      "spark/streaming_job.py"]
