@@ -1,6 +1,3 @@
-import pytest
-
-
 async def test_health_ok(client):
     ac, _ = client
     resp = await ac.get("/health")

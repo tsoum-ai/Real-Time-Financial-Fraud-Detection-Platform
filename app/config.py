@@ -1,7 +1,6 @@
 """Central settings. Everything is env-driven so the same image runs in any env."""
 from functools import lru_cache
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
