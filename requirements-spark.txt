@@ -1,0 +1,4 @@
+# Kept separate from the API deps because the Spark image is heavy and
+# we don't want pyspark pulled into the FastAPI container.
+pyspark==3.5.1
+python-dotenv==1.0.1

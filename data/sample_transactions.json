@@ -1,0 +1,82 @@
+[
+  {
+    "transaction_id": "seed-0001",
+    "card_id": "card_0001",
+    "user_id": "user_010",
+    "amount": 42.50,
+    "currency": "USD",
+    "merchant": "Netflix",
+    "country": "US",
+    "timestamp": "2026-07-01T09:12:00Z"
+  },
+  {
+    "transaction_id": "seed-0002",
+    "card_id": "card_0002",
+    "user_id": "user_011",
+    "amount": 18750.00,
+    "currency": "USD",
+    "merchant": "IKEA",
+    "country": "DE",
+    "timestamp": "2026-07-01T09:15:30Z"
+  },
+  {
+    "transaction_id": "seed-0003",
+    "card_id": "card_0003",
+    "user_id": "user_012",
+    "amount": 320.00,
+    "currency": "USD",
+    "merchant": "Uber",
+    "country": "NG",
+    "timestamp": "2026-07-01T09:16:10Z"
+  },
+  {
+    "transaction_id": "seed-0004",
+    "card_id": "card_0000",
+    "user_id": "user_013",
+    "amount": 75.00,
+    "currency": "USD",
+    "merchant": "Shell",
+    "country": "US",
+    "timestamp": "2026-07-01T09:16:11Z"
+  },
+  {
+    "transaction_id": "seed-0005",
+    "card_id": "card_0000",
+    "user_id": "user_013",
+    "amount": 80.00,
+    "currency": "USD",
+    "merchant": "Shell",
+    "country": "US",
+    "timestamp": "2026-07-01T09:16:12Z"
+  },
+  {
+    "transaction_id": "seed-0006",
+    "card_id": "card_0000",
+    "user_id": "user_013",
+    "amount": 65.00,
+    "currency": "USD",
+    "merchant": "Shell",
+    "country": "US",
+    "timestamp": "2026-07-01T09:16:13Z"
+  },
+  {
+    "transaction_id": "seed-0007",
+    "card_id": "card_0004",
+    "user_id": "user_014",
+    "amount": 240.99,
+    "currency": "USD",
+    "merchant": "Amazon",
+    "country": "GB",
+    "timestamp": "2026-07-01T09:20:00Z"
+  },
+  {
+    "transaction_id": "seed-0008",
+    "card_id": "card_0005",
+    "user_id": "user_015",
+    "amount": 55000.00,
+    "currency": "USD",
+    "merchant": "Apple",
+    "country": "RU",
+    "timestamp": "2026-07-01T09:22:45Z"
+  }
+]
