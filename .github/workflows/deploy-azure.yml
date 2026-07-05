@@ -1,0 +1,89 @@
+name: Deploy to Azure
+
+# Two-stage deploy: platform.bicep (registry, Event Hubs, Cosmos DB, Key Vault,
+# Container Apps environment) rarely changes, so it's deployed idempotently
+# every run before the images are built against the registry it creates.
+# apps.bicep (the three Container Apps) is the fast path that runs on every push.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RESOURCE_GROUP: fraud-detection-platform
+  LOCATION: eastus
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      # OIDC federated login - no client secret stored in GitHub.
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure resource group exists
+        run: |
+          az group create --name "$RESOURCE_GROUP" --location "$LOCATION"
+
+      - name: Resolve CI service principal object ID
+        id: ci-principal
+        run: |
+          OBJECT_ID=$(az ad sp show --id "${{ secrets.AZURE_CLIENT_ID }}" --query id -o tsv)
+          echo "objectId=$OBJECT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy platform layer
+        id: platform
+        uses: azure/arm-deploy@v2
+        with:
+          scope: resourcegroup
+          resourceGroupName: ${{ env.RESOURCE_GROUP }}
+          template: infra/platform.bicep
+          deploymentName: platform-${{ github.run_number }}
+          parameters: >
+            ciPrincipalId=${{ steps.ci-principal.outputs.objectId }}
+
+      - name: Log in to ACR
+        run: az acr login --name ${{ fromJson(steps.platform.outputs.outputs).acrName.value }}
+
+      - name: Build and push images
+        run: |
+          ACR="${{ fromJson(steps.platform.outputs.outputs).acrLoginServer.value }}"
+          TAG="${{ github.sha }}"
+          docker build -f docker/Dockerfile.api -t "$ACR/fraud-api:$TAG" -t "$ACR/fraud-api:latest" .
+          docker build -f docker/Dockerfile.spark -t "$ACR/fraud-spark:$TAG" -t "$ACR/fraud-spark:latest" .
+          docker build -f docker/Dockerfile.producer -t "$ACR/fraud-producer:$TAG" -t "$ACR/fraud-producer:latest" .
+          docker push "$ACR/fraud-api:$TAG"
+          docker push "$ACR/fraud-api:latest"
+          docker push "$ACR/fraud-spark:$TAG"
+          docker push "$ACR/fraud-spark:latest"
+          docker push "$ACR/fraud-producer:$TAG"
+          docker push "$ACR/fraud-producer:latest"
+
+      - name: Deploy apps layer
+        uses: azure/arm-deploy@v2
+        with:
+          scope: resourcegroup
+          resourceGroupName: ${{ env.RESOURCE_GROUP }}
+          template: infra/apps.bicep
+          deploymentName: apps-${{ github.run_number }}
+          parameters: >
+            imageTag=${{ github.sha }}
+            acrLoginServer=${{ fromJson(steps.platform.outputs.outputs).acrLoginServer.value }}
+            containerAppsEnvironmentId=${{ fromJson(steps.platform.outputs.outputs).containerAppsEnvironmentId.value }}
+            identityId=${{ fromJson(steps.platform.outputs.outputs).identityId.value }}
+            envStorageName=${{ fromJson(steps.platform.outputs.outputs).envStorageName.value }}
+            keyVaultUri=${{ fromJson(steps.platform.outputs.outputs).keyVaultUri.value }}
+            kafkaBootstrapServers=${{ fromJson(steps.platform.outputs.outputs).kafkaBootstrapServers.value }}
+            eventHubName=${{ fromJson(steps.platform.outputs.outputs).eventHubName.value }}
+            cosmosDatabaseName=${{ fromJson(steps.platform.outputs.outputs).cosmosDatabaseName.value }}

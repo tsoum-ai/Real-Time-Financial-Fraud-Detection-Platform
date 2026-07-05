@@ -25,6 +25,13 @@ FRAUD_COLLECTION = os.getenv("MONGO_FRAUDS_COLLECTION", "fraud_alerts")
 CHECKPOINT_DIR = os.getenv("SPARK_CHECKPOINT_DIR", "/tmp/spark-checkpoints")
 MAX_OFFSETS = os.getenv("SPARK_MAX_OFFSETS_PER_TRIGGER", "1000")
 
+# SASL/SSL - only needed against a managed broker (e.g. Azure Event Hubs' Kafka
+# endpoint); leave protocol as PLAINTEXT for the local docker-compose broker.
+KAFKA_SECURITY_PROTOCOL = os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
+KAFKA_SASL_MECHANISM = os.getenv("KAFKA_SASL_MECHANISM", "PLAIN")
+KAFKA_SASL_USERNAME = os.getenv("KAFKA_SASL_USERNAME", "")
+KAFKA_SASL_PASSWORD = os.getenv("KAFKA_SASL_PASSWORD", "")
+
 AMOUNT_THRESHOLD = float(os.getenv("FRAUD_AMOUNT_THRESHOLD", "10000"))
 RAPID_WINDOW = int(os.getenv("FRAUD_RAPID_TXN_WINDOW_SECONDS", "60"))
 RAPID_COUNT = int(os.getenv("FRAUD_RAPID_TXN_COUNT", "5"))
@@ -61,14 +68,24 @@ def build_spark() -> SparkSession:
 
 
 def read_stream(spark: SparkSession) -> DataFrame:
-    raw = (
+    reader = (
         spark.readStream.format("kafka")
         .option("kafka.bootstrap.servers", KAFKA_BROKERS)
         .option("subscribe", TOPIC)
         .option("startingOffsets", "latest")
         .option("maxOffsetsPerTrigger", MAX_OFFSETS)
-        .load()
     )
+    if KAFKA_SECURITY_PROTOCOL != "PLAINTEXT":
+        jaas_config = (
+            "org.apache.kafka.common.security.plain.PlainLoginModule required "
+            f'username="{KAFKA_SASL_USERNAME}" password="{KAFKA_SASL_PASSWORD}";'
+        )
+        reader = (
+            reader.option("kafka.security.protocol", KAFKA_SECURITY_PROTOCOL)
+            .option("kafka.sasl.mechanism", KAFKA_SASL_MECHANISM)
+            .option("kafka.sasl.jaas.config", jaas_config)
+        )
+    raw = reader.load()
     # value is bytes -> json -> flatten
     return (
         raw.select(F.from_json(F.col("value").cast("string"), TXN_SCHEMA).alias("t"))

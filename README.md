@@ -130,6 +130,35 @@ To also run the Spark rule tests locally: `pip install -r requirements-spark.txt
 `.github/workflows/ci.yml` runs ruff, a compile check and the test suite on every
 push/PR, then builds the API and producer images and validates the compose file.
 
+## Azure deployment
+
+The same containers run on Azure with managed data services in place of the
+self-hosted Kafka/Mongo: no code fork, just different env vars.
+
+| Local (docker-compose) | Azure |
+|---|---|
+| Zookeeper + Kafka | **Event Hubs** (Kafka-compatible endpoint, SASL_SSL) |
+| MongoDB | **Cosmos DB for MongoDB API** |
+| api / spark / producer containers | **Azure Container Apps** |
+| — | **Container Registry** (images), **Key Vault** (secrets), **Azure Files** (Spark checkpoint durability) |
+
+`infra/platform.bicep` provisions the registry, Event Hubs, Cosmos DB, Key
+Vault and the Container Apps environment (rarely changes). `infra/apps.bicep`
+deploys the three Container Apps against those outputs (runs on every push).
+`.github/workflows/deploy-azure.yml` wires the two together: deploy platform →
+build/push images to ACR → deploy apps, authenticating via OIDC federated
+credentials (no stored client secret).
+
+To use it, create an Azure AD app registration with a federated credential
+for this repo and set these repo secrets: `AZURE_CLIENT_ID`,
+`AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. The app's Kafka/Mongo settings
+(`KAFKA_SECURITY_PROTOCOL=SASL_SSL`, etc.) are the same env vars used locally
+— see the Azure section of `.env.example`.
+
+The Bicep hasn't been linted against a live subscription in this environment
+(no Azure CLI available here) — run `az bicep build --file infra/platform.bicep`
+before the first real deployment.
+
 ## Notes / known limitations
 
 - The rapid-fire and duplicate-card checks are evaluated per micro-batch rather
