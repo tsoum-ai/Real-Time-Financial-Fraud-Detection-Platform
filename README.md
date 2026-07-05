@@ -130,6 +130,48 @@ To also run the Spark rule tests locally: `pip install -r requirements-spark.txt
 `.github/workflows/ci.yml` runs ruff, a compile check and the test suite on every
 push/PR, then builds the API and producer images and validates the compose file.
 
+## Azure deployment
+
+The same containers run on Azure with managed data services in place of the
+self-hosted Kafka/Mongo: no code fork, just different env vars.
+
+| Local (docker-compose) | Azure |
+|---|---|
+| Zookeeper + Kafka | **Event Hubs** (Kafka-compatible endpoint, SASL_SSL) |
+| MongoDB | **Cosmos DB for MongoDB API** |
+| api / spark / producer containers | **Azure Container Apps** |
+| — | **Container Registry** (images), **Key Vault** (secrets), **Azure Files** (Spark checkpoint durability) |
+
+Deployment is split into two layers, mirroring how platform and app teams
+divide responsibility in practice:
+
+- **Platform layer** (`infra/platform.bicep`): the registry, Event Hubs,
+  Cosmos DB, Key Vault, and the Container Apps environment — *including the RBAC
+  role assignments* that let the app identity pull images and read secrets.
+  Because it creates role assignments, it's deployed once by someone with
+  role-assignment rights (Owner / User Access Administrator):
+
+  ```bash
+  az group create -n fraud-detection-platform -l eastus
+  az deployment group create -g fraud-detection-platform \
+    -n platform --template-file infra/platform.bicep
+  ```
+
+- **App layer** (`infra/apps.bicep` + `.github/workflows/deploy-azure.yml`):
+  the three Container Apps. This is the frequent, least-privilege path — the CI
+  identity only needs **Contributor** on the resource group. On push to `main`
+  the workflow reads the platform layer's outputs, builds and pushes the images
+  to ACR, then deploys the apps. It authenticates via OIDC federated credentials
+  (no stored client secret).
+
+To wire up CI: create an Azure AD app registration with a federated credential
+for this repo (`repo:<owner>/<repo>:ref:refs/heads/main` and, because the deploy
+job uses a `production` environment, also `repo:<owner>/<repo>:environment:production`),
+grant it Contributor on the resource group, and set these repo secrets:
+`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. The app's
+Kafka/Mongo settings (`KAFKA_SECURITY_PROTOCOL=SASL_SSL`, etc.) are the same env
+vars used locally — see the Azure section of `.env.example`.
+
 ## Notes / known limitations
 
 - The rapid-fire and duplicate-card checks are evaluated per micro-batch rather

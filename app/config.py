@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = "kafka:9092"
     kafka_transactions_topic: str = "transactions"
     kafka_client_id: str = "fraud-platform"
+    # SASL/SSL - only needed against a managed broker (e.g. Azure Event Hubs' Kafka
+    # endpoint); leave protocol as PLAINTEXT for the local docker-compose broker.
+    kafka_security_protocol: str = "PLAINTEXT"
+    kafka_sasl_mechanism: str = "PLAIN"
+    kafka_sasl_username: str = ""
+    kafka_sasl_password: str = ""
 
     # Mongo
     mongo_uri: str = "mongodb://mongo:27017"

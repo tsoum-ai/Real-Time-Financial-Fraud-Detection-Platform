@@ -24,16 +24,24 @@ def _json_default(o):
 class KafkaProducer:
     def __init__(self, settings: Settings) -> None:
         self._topic = settings.kafka_transactions_topic
-        self._producer = Producer(
-            {
-                "bootstrap.servers": settings.kafka_bootstrap_servers,
-                "client.id": settings.kafka_client_id,
-                # keep latency low but still batch a little under load
-                "linger.ms": 5,
-                "acks": "all",
-                "enable.idempotence": True,
-            }
-        )
+        config = {
+            "bootstrap.servers": settings.kafka_bootstrap_servers,
+            "client.id": settings.kafka_client_id,
+            # keep latency low but still batch a little under load
+            "linger.ms": 5,
+            "acks": "all",
+            "enable.idempotence": True,
+        }
+        if settings.kafka_security_protocol != "PLAINTEXT":
+            config.update(
+                {
+                    "security.protocol": settings.kafka_security_protocol,
+                    "sasl.mechanism": settings.kafka_sasl_mechanism,
+                    "sasl.username": settings.kafka_sasl_username,
+                    "sasl.password": settings.kafka_sasl_password,
+                }
+            )
+        self._producer = Producer(config)
 
     def produce(self, key: str, value: dict) -> None:
         """Queue a message. Raises if the local queue is full (backpressure)."""
