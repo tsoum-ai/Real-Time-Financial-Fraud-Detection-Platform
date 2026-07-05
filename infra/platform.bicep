@@ -18,6 +18,9 @@ param eventHubCapacity int = 1
 @description('Cosmos DB Mongo API database name; matches MONGO_DB in .env.example.')
 param cosmosDatabaseName string = 'fraud_platform'
 
+@description('Region for the Cosmos DB account. Kept separate from the main region because some regions (notably East US) frequently reject new Cosmos accounts with a capacity/ServiceUnavailable error; East US 2 usually has headroom.')
+param cosmosLocation string = 'eastus2'
+
 @description('Event Hub (Kafka topic) name; matches KAFKA_TRANSACTIONS_TOPIC in .env.example.')
 param eventHubName string = 'transactions'
 
@@ -173,12 +176,15 @@ resource eventHubAuthRule 'Microsoft.EventHub/namespaces/AuthorizationRules@2023
 // --- Cosmos DB, standing in for MongoDB via its Mongo API ---
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = {
   name: cosmosAccountName
-  location: location
+  location: cosmosLocation
   kind: 'MongoDB'
   properties: {
     databaseAccountOfferType: 'Standard'
     locations: [
-      { locationName: location, failoverPriority: 0 }
+      // isZoneRedundant:false so we land on non-AZ capacity, and cosmosLocation
+      // steers away from regions that reject new Cosmos accounts with a
+      // ServiceUnavailable/high-demand error.
+      { locationName: cosmosLocation, failoverPriority: 0, isZoneRedundant: false }
     ]
     capabilities: [
       { name: 'EnableMongo' }

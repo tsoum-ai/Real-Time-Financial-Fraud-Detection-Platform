@@ -142,22 +142,35 @@ self-hosted Kafka/Mongo: no code fork, just different env vars.
 | api / spark / producer containers | **Azure Container Apps** |
 | — | **Container Registry** (images), **Key Vault** (secrets), **Azure Files** (Spark checkpoint durability) |
 
-`infra/platform.bicep` provisions the registry, Event Hubs, Cosmos DB, Key
-Vault and the Container Apps environment (rarely changes). `infra/apps.bicep`
-deploys the three Container Apps against those outputs (runs on every push).
-`.github/workflows/deploy-azure.yml` wires the two together: deploy platform →
-build/push images to ACR → deploy apps, authenticating via OIDC federated
-credentials (no stored client secret).
+Deployment is split into two layers, mirroring how platform and app teams
+divide responsibility in practice:
 
-To use it, create an Azure AD app registration with a federated credential
-for this repo and set these repo secrets: `AZURE_CLIENT_ID`,
-`AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. The app's Kafka/Mongo settings
-(`KAFKA_SECURITY_PROTOCOL=SASL_SSL`, etc.) are the same env vars used locally
-— see the Azure section of `.env.example`.
+- **Platform layer** (`infra/platform.bicep`): the registry, Event Hubs,
+  Cosmos DB, Key Vault, and the Container Apps environment — *including the RBAC
+  role assignments* that let the app identity pull images and read secrets.
+  Because it creates role assignments, it's deployed once by someone with
+  role-assignment rights (Owner / User Access Administrator):
 
-The Bicep hasn't been linted against a live subscription in this environment
-(no Azure CLI available here) — run `az bicep build --file infra/platform.bicep`
-before the first real deployment.
+  ```bash
+  az group create -n fraud-detection-platform -l eastus
+  az deployment group create -g fraud-detection-platform \
+    -n platform --template-file infra/platform.bicep
+  ```
+
+- **App layer** (`infra/apps.bicep` + `.github/workflows/deploy-azure.yml`):
+  the three Container Apps. This is the frequent, least-privilege path — the CI
+  identity only needs **Contributor** on the resource group. On push to `main`
+  the workflow reads the platform layer's outputs, builds and pushes the images
+  to ACR, then deploys the apps. It authenticates via OIDC federated credentials
+  (no stored client secret).
+
+To wire up CI: create an Azure AD app registration with a federated credential
+for this repo (`repo:<owner>/<repo>:ref:refs/heads/main` and, because the deploy
+job uses a `production` environment, also `repo:<owner>/<repo>:environment:production`),
+grant it Contributor on the resource group, and set these repo secrets:
+`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. The app's
+Kafka/Mongo settings (`KAFKA_SECURITY_PROTOCOL=SASL_SSL`, etc.) are the same env
+vars used locally — see the Azure section of `.env.example`.
 
 ## Notes / known limitations
 

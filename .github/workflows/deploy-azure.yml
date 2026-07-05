@@ -1,9 +1,13 @@
 name: Deploy to Azure
 
-# Two-stage deploy: platform.bicep (registry, Event Hubs, Cosmos DB, Key Vault,
-# Container Apps environment) rarely changes, so it's deployed idempotently
-# every run before the images are built against the registry it creates.
-# apps.bicep (the three Container Apps) is the fast path that runs on every push.
+# App CD pipeline (least-privilege). The platform/infra layer (registry, Event
+# Hubs, Cosmos DB, Key Vault, Container Apps environment - including the RBAC
+# role assignments) is provisioned once out-of-band with infra/platform.bicep by
+# someone with role-assignment rights. This pipeline runs as a Contributor-scoped
+# identity and only does the frequent app-layer work: read the platform's
+# outputs, build & push the images, and deploy infra/apps.bicep (the three
+# Container Apps). apps.bicep creates no role assignments, so Contributor is
+# sufficient here.
 on:
   push:
     branches: [main]
@@ -15,7 +19,7 @@ permissions:
 
 env:
   RESOURCE_GROUP: fraud-detection-platform
-  LOCATION: eastus
+  PLATFORM_DEPLOYMENT: platform
 
 jobs:
   deploy:
@@ -32,33 +36,31 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Ensure resource group exists
-        run: |
-          az group create --name "$RESOURCE_GROUP" --location "$LOCATION"
-
-      - name: Resolve CI service principal object ID
-        id: ci-principal
-        run: |
-          OBJECT_ID=$(az ad sp show --id "${{ secrets.AZURE_CLIENT_ID }}" --query id -o tsv)
-          echo "objectId=$OBJECT_ID" >> "$GITHUB_OUTPUT"
-
-      - name: Deploy platform layer
+      # Pull the outputs (registry, identity, env id, KV uri, kafka bootstrap...)
+      # from the already-deployed platform layer so we can wire the apps to them.
+      - name: Read platform outputs
         id: platform
-        uses: azure/arm-deploy@v2
-        with:
-          scope: resourcegroup
-          resourceGroupName: ${{ env.RESOURCE_GROUP }}
-          template: infra/platform.bicep
-          deploymentName: platform-${{ github.run_number }}
-          parameters: >
-            ciPrincipalId=${{ steps.ci-principal.outputs.objectId }}
+        run: |
+          OUT=$(az deployment group show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$PLATFORM_DEPLOYMENT" \
+            --query properties.outputs -o json)
+          echo "acrName=$(echo "$OUT" | jq -r '.acrName.value')" >> "$GITHUB_OUTPUT"
+          echo "acrLoginServer=$(echo "$OUT" | jq -r '.acrLoginServer.value')" >> "$GITHUB_OUTPUT"
+          echo "identityId=$(echo "$OUT" | jq -r '.identityId.value')" >> "$GITHUB_OUTPUT"
+          echo "containerAppsEnvironmentId=$(echo "$OUT" | jq -r '.containerAppsEnvironmentId.value')" >> "$GITHUB_OUTPUT"
+          echo "envStorageName=$(echo "$OUT" | jq -r '.envStorageName.value')" >> "$GITHUB_OUTPUT"
+          echo "keyVaultUri=$(echo "$OUT" | jq -r '.keyVaultUri.value')" >> "$GITHUB_OUTPUT"
+          echo "kafkaBootstrapServers=$(echo "$OUT" | jq -r '.kafkaBootstrapServers.value')" >> "$GITHUB_OUTPUT"
+          echo "eventHubName=$(echo "$OUT" | jq -r '.eventHubName.value')" >> "$GITHUB_OUTPUT"
+          echo "cosmosDatabaseName=$(echo "$OUT" | jq -r '.cosmosDatabaseName.value')" >> "$GITHUB_OUTPUT"
 
       - name: Log in to ACR
-        run: az acr login --name ${{ fromJson(steps.platform.outputs.outputs).acrName.value }}
+        run: az acr login --name ${{ steps.platform.outputs.acrName }}
 
       - name: Build and push images
         run: |
-          ACR="${{ fromJson(steps.platform.outputs.outputs).acrLoginServer.value }}"
+          ACR="${{ steps.platform.outputs.acrLoginServer }}"
           TAG="${{ github.sha }}"
           docker build -f docker/Dockerfile.api -t "$ACR/fraud-api:$TAG" -t "$ACR/fraud-api:latest" .
           docker build -f docker/Dockerfile.spark -t "$ACR/fraud-spark:$TAG" -t "$ACR/fraud-spark:latest" .
@@ -79,11 +81,11 @@ jobs:
           deploymentName: apps-${{ github.run_number }}
           parameters: >
             imageTag=${{ github.sha }}
-            acrLoginServer=${{ fromJson(steps.platform.outputs.outputs).acrLoginServer.value }}
-            containerAppsEnvironmentId=${{ fromJson(steps.platform.outputs.outputs).containerAppsEnvironmentId.value }}
-            identityId=${{ fromJson(steps.platform.outputs.outputs).identityId.value }}
-            envStorageName=${{ fromJson(steps.platform.outputs.outputs).envStorageName.value }}
-            keyVaultUri=${{ fromJson(steps.platform.outputs.outputs).keyVaultUri.value }}
-            kafkaBootstrapServers=${{ fromJson(steps.platform.outputs.outputs).kafkaBootstrapServers.value }}
-            eventHubName=${{ fromJson(steps.platform.outputs.outputs).eventHubName.value }}
-            cosmosDatabaseName=${{ fromJson(steps.platform.outputs.outputs).cosmosDatabaseName.value }}
+            acrLoginServer=${{ steps.platform.outputs.acrLoginServer }}
+            containerAppsEnvironmentId=${{ steps.platform.outputs.containerAppsEnvironmentId }}
+            identityId=${{ steps.platform.outputs.identityId }}
+            envStorageName=${{ steps.platform.outputs.envStorageName }}
+            keyVaultUri=${{ steps.platform.outputs.keyVaultUri }}
+            kafkaBootstrapServers=${{ steps.platform.outputs.kafkaBootstrapServers }}
+            eventHubName=${{ steps.platform.outputs.eventHubName }}
+            cosmosDatabaseName=${{ steps.platform.outputs.cosmosDatabaseName }}
