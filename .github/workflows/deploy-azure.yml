@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 env:
-  RESOURCE_GROUP: fraud-detection-platform
+  RESOURCE_GROUP: fraud-platform
   PLATFORM_DEPLOYMENT: platform
 
 jobs:
